@@ -1,468 +1,847 @@
 """
-КОНВЕРТЕР ИЗОБРАЖЕНИЙ - ИСПРАВЛЕННАЯ ВЕРСИЯ
-С поддержкой WebP и всех форматов
+UNIVERSAL FILE CONVERTER
+Supports: PNG, JPEG, WebP, BMP, GIF, TIFF, DOCX, PDF, TXT
 """
 
-print("=" * 50)
-print("НАЧАЛО ЗАГРУЗКИ ПРОГРАММЫ")
-print("=" * 50)
-
-# Шаг 1: Проверяем импорты
-try:
-    import tkinter as tk
-    print("✓ tkinter загружен")
-    
-    # Тестируем tkinter
-    test_root = tk.Tk()
-    test_root.withdraw()  # Скрываем тестовое окно
-    print("✓ tkinter работает")
-    test_root.destroy()
-    
-except Exception as e:
-    print(f"✗ Ошибка tkinter: {e}")
-    input("Нажмите Enter для выхода...")
-    exit()
-
-try:
-    from tkinter import filedialog, messagebox
-    print("✓ tkinter модули загружены")
-except Exception as e:
-    print(f"✗ Ошибка модулей tkinter: {e}")
-
-try:
-    from PIL import Image
-    print("✓ Pillow загружен")
-    
-    # Проверяем поддержку WebP
-    try:
-        Image.open("test.webp")
-        print("✓ WebP поддерживается")
-    except:
-        print("⚠ WebP может требовать обновления Pillow")
-        
-except ImportError as e:
-    print(f"✗ Pillow не установлен! Установите: pip install pillow")
-    input("Нажмите Enter для выхода...")
-    exit()
-
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
+from PIL import Image, ImageTk
 import os
-import time
+import io
+import sys
+from datetime import datetime
 
-print("=" * 50)
-print("БИБЛИОТЕКИ ЗАГРУЖЕНЫ УСПЕШНО")
-print("=" * 50)
+# Optional imports with fallbacks
+try:
+    import fitz  # PyMuPDF
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt
+    DOCX_SUPPORT = True
+except ImportError:
+    DOCX_SUPPORT = False
 
-# ============================================================================
-# ГЛАВНОЕ ПРИЛОЖЕНИЕ
-# ============================================================================
-def main():
-    print("\nСоздаем главное окно...")
+class UniversalConverter:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Universal Converter Pro v2.0")
+        self.root.geometry("900x700")
+        
+        # Variables
+        self.file_path = None
+        self.original_image = None
+        self.preview_image = None
+        self.file_type = None
+        self.file_info = {}
+        
+        # Colors
+        self.colors = {
+            'bg': '#f5f5f5',
+            'primary': '#2196F3',
+            'success': '#4CAF50',
+            'warning': '#FF9800',
+            'danger': '#F44336',
+            'dark': '#333333'
+        }
+        
+        self.root.configure(bg=self.colors['bg'])
+        self.setup_ui()
+        self.center_window()
+        
+    def center_window(self):
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
     
-    # Создаем главное окно
-    root = tk.Tk()
-    root.title("Image Converter 2.0")
-    root.geometry("500x450")  # Немного увеличил окно
-    
-    # Центрируем окно на экране
-    root.update_idletasks()
-    width = root.winfo_width()
-    height = root.winfo_height()
-    x = (root.winfo_screenwidth() // 2) - (width // 2)
-    y = (root.winfo_screenheight() // 2) - (height // 2)
-    root.geometry(f'{width}x{height}+{x}+{y}')
-    
-    # Делаем окно поверх всех
-    root.attributes('-topmost', True)
-    root.update()
-    root.attributes('-topmost', False)
-    
-    print("✓ Окно создано и позиционировано")
-    
-    # Переменные
-    image_path = None
-    current_image = None
-    
-    # ============================================================================
-    # СОЗДАНИЕ ИНТЕРФЕЙСА
-    # ============================================================================
-    print("Создаем интерфейс...")
-    
-    # Заголовок
-    title_frame = tk.Frame(root)
-    title_frame.pack(pady=15)
-    
-    title_label = tk.Label(
-        title_frame,
-        text="🖼️ IMAGE CONVERTER PRO",
-        font=("Arial", 18, "bold"),
-        fg="darkblue"
-    )
-    title_label.pack()
-    
-    subtitle_label = tk.Label(
-        title_frame,
-        text="Convert images between formats with WebP support",
-        font=("Arial", 10),
-        fg="gray"
-    )
-    subtitle_label.pack()
-    
-    # Разделитель
-    separator = tk.Frame(root, height=2, bg="lightgray")
-    separator.pack(fill=tk.X, padx=30, pady=10)
-    
-    # Статус загрузки
-    status_label = tk.Label(
-        root,
-        text="Ready to convert",
-        font=("Arial", 9),
-        fg="green"
-    )
-    status_label.pack(pady=5)
-    
-    # Кнопка выбора файла
-    select_btn = tk.Button(
-        root,
-        text="📂 SELECT IMAGE",
-        command=lambda: select_image(),
-        font=("Arial", 12, "bold"),
-        bg="#4CAF50",
-        fg="white",
-        activebackground="#45a049",
-        padx=30,
-        pady=10,
-        cursor="hand2"
-    )
-    select_btn.pack(pady=10)
-    
-    # Метка выбранного файла
-    file_label = tk.Label(
-        root,
-        text="No image selected",
-        font=("Arial", 10),
-        fg="#666",
-        bg="#f5f5f5",
-        relief=tk.SUNKEN,
-        width=45,
-        height=2
-    )
-    file_label.pack(pady=10)
-    
-    # Фрейм форматов
-    format_frame = tk.LabelFrame(root, text="Output Format", padx=15, pady=10)
-    format_frame.pack(pady=10, padx=20, fill=tk.X)
-    
-    format_var = tk.StringVar(value="PNG")
-    
-    # Все поддерживаемые форматы
-    formats = [
-        ("PNG (Best for graphics, transparent)", "PNG"),
-        ("JPEG (Best for photos)", "JPEG"),
-        ("WebP (Modern format, small size)", "WebP"),
-        ("BMP (Windows bitmap)", "BMP"),
-        ("GIF (Animated images)", "GIF"),
-        ("TIFF (High quality)", "TIFF")
-    ]
-    
-    for text, value in formats:
-        rb = tk.Radiobutton(
-            format_frame,
-            text=text,
-            variable=format_var,
-            value=value,
-            font=("Arial", 9),
-            anchor="w"
+    def setup_ui(self):
+        # Main container
+        main_container = tk.Frame(self.root, bg=self.colors['bg'])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Header
+        header_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        tk.Label(header_frame, text="🔄 UNIVERSAL CONVERTER PRO", 
+                font=("Arial", 22, "bold"), fg=self.colors['primary'],
+                bg=self.colors['bg']).pack()
+        
+        tk.Label(header_frame, 
+                text="PNG • JPEG • WebP • BMP • GIF • TIFF • DOCX • PDF • TXT", 
+                font=("Arial", 10), fg=self.colors['dark'],
+                bg=self.colors['bg']).pack()
+        
+        # Content area
+        content_frame = tk.Frame(main_container, bg=self.colors['bg'])
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Left panel - Preview
+        left_panel = tk.LabelFrame(content_frame, text=" 📁 FILE PREVIEW", 
+                                  font=("Arial", 11, "bold"),
+                                  bg=self.colors['bg'], fg=self.colors['dark'],
+                                  padx=15, pady=15)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # Preview area
+        self.preview_canvas = tk.Canvas(left_panel, bg="white", 
+                                       highlightthickness=1, 
+                                       highlightbackground="#ddd")
+        self.preview_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        self.preview_text = scrolledtext.ScrolledText(left_panel, height=15,
+                                                     font=("Consolas", 9),
+                                                     wrap=tk.WORD)
+        self.preview_text.pack_forget()  # Hidden by default
+        
+        self.preview_label = tk.Label(self.preview_canvas, 
+                                     text="Select a file to preview",
+                                     font=("Arial", 12), fg="gray",
+                                     bg="white")
+        self.preview_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        
+        # Right panel - Controls
+        right_panel = tk.Frame(content_frame, bg=self.colors['bg'])
+        right_panel.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # File info panel
+        info_frame = tk.LabelFrame(right_panel, text=" 📊 FILE INFORMATION", 
+                                  font=("Arial", 11, "bold"),
+                                  bg=self.colors['bg'], fg=self.colors['dark'],
+                                  padx=15, pady=15)
+        info_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        self.info_display = tk.Text(info_frame, height=8, width=35,
+                                   font=("Arial", 9), bg="#fafafa",
+                                   relief=tk.FLAT)
+        self.info_display.pack()
+        self.info_display.config(state=tk.DISABLED)
+        
+        # Format selection
+        format_frame = tk.LabelFrame(right_panel, text=" 🎯 CONVERT TO", 
+                                    font=("Arial", 11, "bold"),
+                                    bg=self.colors['bg'], fg=self.colors['dark'],
+                                    padx=15, pady=15)
+        format_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Create scrollable format list
+        format_container = tk.Frame(format_frame, bg=self.colors['bg'])
+        format_container.pack(fill=tk.BOTH, expand=True)
+        
+        canvas = tk.Canvas(format_container, height=180, bg=self.colors['bg'],
+                          highlightthickness=0)
+        scrollbar = tk.Scrollbar(format_container, orient="vertical", 
+                                command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=self.colors['bg'])
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        rb.pack(anchor="w", pady=1)
-    
-    # Фрейм кнопок
-    button_frame = tk.Frame(root)
-    button_frame.pack(pady=15)
-    
-    # Кнопка конвертации (изначально отключена)
-    convert_btn = tk.Button(
-        button_frame,
-        text="🔄 CONVERT NOW",
-        command=lambda: convert_image(),
-        font=("Arial", 11, "bold"),
-        bg="#2196F3",
-        fg="white",
-        padx=25,
-        pady=8,
-        state=tk.DISABLED
-    )
-    convert_btn.pack(side=tk.LEFT, padx=(0, 10))
-    
-    # Кнопка выхода
-    exit_btn = tk.Button(
-        button_frame,
-        text="🚪 EXIT",
-        command=root.quit,
-        font=("Arial", 11),
-        bg="#f44336",
-        fg="white",
-        padx=20,
-        pady=8
-    )
-    exit_btn.pack(side=tk.LEFT)
-    
-    # Информация
-    info_label = tk.Label(
-        root,
-        text="Supports: PNG, JPG, JPEG, WebP, BMP, GIF, TIFF",
-        font=("Arial", 8),
-        fg="#888"
-    )
-    info_label.pack(pady=5)
-    
-    print("✓ Интерфейс создан")
-    
-    # ============================================================================
-    # ФУНКЦИИ
-    # ============================================================================
-    def select_image():
-        nonlocal image_path, current_image
         
-        print("Открываем диалог выбора файла...")
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        try:
-            # Открываем диалог выбора файла с поддержкой ВСЕХ форматов
-            filetypes_list = [
-                ("All image files", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tiff *.tif"),
-                ("PNG files", "*.png"),
-                ("JPEG files", "*.jpg *.jpeg"),
-                ("WebP files", "*.webp"),
-                ("BMP files", "*.bmp"),
-                ("GIF files", "*.gif"),
-                ("TIFF files", "*.tiff *.tif"),
-                ("All files", "*.*")
-            ]
+        self.format_var = tk.StringVar(value="PNG")
+        
+        formats = [
+            ("PNG Image (Lossless)", "PNG"),
+            ("JPEG Image (Best for photos)", "JPEG"),
+            ("WebP Image (Modern format)", "WebP"),
+            ("BMP Image (Windows Bitmap)", "BMP"),
+            ("GIF Image (Animation)", "GIF"),
+            ("TIFF Image (High quality)", "TIFF"),
+            ("PDF Document", "PDF"),
+            ("DOCX Document (Word)", "DOCX"),
+            ("TXT Text File", "TXT")
+        ]
+        
+        for text, value in formats:
+            rb = tk.Radiobutton(scrollable_frame, text=text, 
+                               variable=self.format_var, value=value,
+                               bg=self.colors['bg'], anchor="w",
+                               font=("Arial", 9))
+            rb.pack(fill=tk.X, pady=2, ipady=2)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Buttons panel
+        btn_frame = tk.Frame(right_panel, bg=self.colors['bg'])
+        btn_frame.pack(fill=tk.X)
+        
+        buttons = [
+            ("📂 SELECT FILE", self.select_file, self.colors['primary']),
+            ("🔄 CONVERT FILE", self.convert_file, self.colors['success']),
+            ("🗑️ CLEAR ALL", self.clear_all, self.colors['warning']),
+            ("ℹ️ HELP", self.show_help, "#9C27B0"),
+            ("🚪 EXIT", self.root.quit, self.colors['danger'])
+        ]
+        
+        for text, command, color in buttons:
+            btn = tk.Button(btn_frame, text=text, command=command,
+                           bg=color, fg="white", font=("Arial", 10, "bold"),
+                           padx=20, pady=10, cursor="hand2")
+            btn.pack(fill=tk.X, pady=5)
             
-            path = filedialog.askopenfilename(
-                title="Select an image file",
-                filetypes=filetypes_list
-            )
-            
-            if path:
-                print(f"Выбран файл: {path}")
-                
-                try:
-                    # Пробуем открыть изображение
-                    current_image = Image.open(path)
-                    image_path = path
-                    
-                    # Обновляем интерфейс
-                    filename = os.path.basename(path)
-                    file_ext = os.path.splitext(filename)[1].upper()
-                    short_name = filename[:25] + "..." if len(filename) > 25 else filename
-                    file_label.config(
-                        text=f"{short_name} [{file_ext}]",
-                        fg="darkblue",
-                        font=("Arial", 10, "bold")
-                    )
-                    
-                    # Активируем кнопку конвертации
-                    convert_btn.config(state=tk.NORMAL, bg="#2196F3")
-                    
-                    # Обновляем статус
-                    status_label.config(
-                        text=f"✓ Loaded: {current_image.format} image",
-                        fg="green"
-                    )
-                    
-                    # Показываем информацию
-                    img_info = f"Size: {current_image.width}×{current_image.height} | Format: {current_image.format}"
-                    print(f"✓ Изображение загружено: {img_info}")
-                    
-                    # Небольшое информационное сообщение
-                    messagebox.showinfo("Image Loaded", 
-                        f"✓ Image loaded successfully!\n\n"
-                        f"File: {filename}\n"
-                        f"Format: {current_image.format}\n"
-                        f"Size: {current_image.width}×{current_image.height} px\n\n"
-                        f"Ready to convert!"
-                    )
-                    
-                except Exception as e:
-                    print(f"✗ Ошибка загрузки изображения: {e}")
-                    messagebox.showerror("Error", f"Cannot open image file:\n{str(e)}")
-                    
-        except Exception as e:
-            print(f"✗ Ошибка в диалоге выбора: {e}")
-            messagebox.showerror("Error", f"Cannot open file dialog:\n{str(e)}")
+            # Disable convert button initially
+            if text == "🔄 CONVERT FILE":
+                self.convert_btn = btn
+                btn.config(state=tk.DISABLED)
     
-    def convert_image():
-        if not image_path or not current_image:
-            messagebox.showwarning("Warning", "Please select an image first!")
+    def select_file(self):
+        filetypes = [
+            ("All supported files", 
+             "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tiff *.tif *.pdf *.docx *.txt"),
+            ("Images", "*.png *.jpg *.jpeg *.webp *.bmp *.gif *.tiff *.tif"),
+            ("Documents", "*.pdf *.docx *.txt"),
+            ("All files", "*.*")
+        ]
+        
+        path = filedialog.askopenfilename(filetypes=filetypes)
+        if path:
+            self.load_file(path)
+    
+    def load_file(self, path):
+        self.file_path = path
+        self.clear_preview()
+        
+        # Detect file type by extension
+        ext = os.path.splitext(path)[1].lower()
+        image_exts = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif', '.tiff', '.tif']
+        
+        if ext in image_exts:
+            self.file_type = 'image'
+            self.load_image(path)
+        elif ext == '.pdf':
+            self.file_type = 'pdf'
+            self.load_pdf(path)
+        elif ext == '.docx':
+            self.file_type = 'docx'
+            self.load_docx(path)
+        elif ext == '.txt':
+            self.file_type = 'txt'
+            self.load_txt(path)
+        else:
+            messagebox.showerror("Error", f"Unsupported file format: {ext}")
             return
         
-        print(f"Начинаем конвертацию {image_path}...")
+        self.update_file_info()
+        self.convert_btn.config(state=tk.NORMAL, bg=self.colors['success'])
+    
+    def load_image(self, path):
+        try:
+            self.original_image = Image.open(path)
+            
+            # Create preview
+            canvas_width = self.preview_canvas.winfo_width() - 40
+            canvas_height = self.preview_canvas.winfo_height() - 40
+            
+            if canvas_width < 10:  # If canvas not yet rendered
+                canvas_width, canvas_height = 400, 300
+            
+            # Calculate resize ratio
+            img_width, img_height = self.original_image.size
+            ratio = min(canvas_width/img_width, canvas_height/img_height)
+            new_size = (int(img_width * ratio), int(img_height * ratio))
+            
+            img_preview = self.original_image.copy()
+            img_preview.thumbnail(new_size, Image.Resampling.LANCZOS)
+            
+            # Convert for display
+            self.preview_image = ImageTk.PhotoImage(img_preview)
+            
+            # Clear and show image
+            self.preview_canvas.delete("all")
+            self.preview_canvas.create_image(canvas_width//2, canvas_height//2,
+                                           image=self.preview_image,
+                                           anchor=tk.CENTER)
+            
+            # Add overlay info
+            info_text = f"{img_width}×{img_height} | {self.original_image.format}"
+            self.preview_canvas.create_text(10, 10, text=info_text,
+                                          anchor=tk.NW, fill="white",
+                                          font=("Arial", 9, "bold"),
+                                          fillbackground="black")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Cannot load image: {str(e)}")
+    
+    def load_pdf(self, path):
+        if not PDF_SUPPORT:
+            self.show_text_preview(f"PDF file: {os.path.basename(path)}\n\n"
+                                  "PyMuPDF not installed.\n"
+                                  "Install: pip install pymupdf")
+            return
+            
+        try:
+            pdf_doc = fitz.open(path)
+            page = pdf_doc[0]
+            
+            # Render first page as image
+            zoom = 2
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            img_data = pix.tobytes("ppm")
+            
+            img = Image.open(io.BytesIO(img_data))
+            
+            # Create preview
+            canvas_width = self.preview_canvas.winfo_width() - 40
+            canvas_height = self.preview_canvas.winfo_height() - 40
+            
+            img_width, img_height = img.size
+            ratio = min(canvas_width/img_width, canvas_height/img_height)
+            new_size = (int(img_width * ratio), int(img_height * ratio))
+            
+            img_preview = img.copy()
+            img_preview.thumbnail(new_size, Image.Resampling.LANCZOS)
+            
+            self.preview_image = ImageTk.PhotoImage(img_preview)
+            
+            self.preview_canvas.delete("all")
+            self.preview_canvas.create_image(canvas_width//2, canvas_height//2,
+                                           image=self.preview_image,
+                                           anchor=tk.CENTER)
+            
+            # Add PDF info
+            info_text = f"PDF | Page 1/{len(pdf_doc)}"
+            self.preview_canvas.create_text(10, 10, text=info_text,
+                                          anchor=tk.NW, fill="white",
+                                          font=("Arial", 9, "bold"),
+                                          fillbackground="black")
+            
+            pdf_doc.close()
+            
+        except Exception as e:
+            self.show_text_preview(f"PDF Content Preview\n\n"
+                                  f"File: {os.path.basename(path)}\n"
+                                  f"Error rendering: {str(e)}")
+    
+    def load_docx(self, path):
+        if not DOCX_SUPPORT:
+            self.show_text_preview(f"DOCX file: {os.path.basename(path)}\n\n"
+                                  "python-docx not installed.\n"
+                                  "Install: pip install python-docx")
+            return
+            
+        try:
+            doc = Document(path)
+            
+            # Extract text content
+            text_content = ""
+            for i, para in enumerate(doc.paragraphs[:20]):  # First 20 paragraphs
+                if para.text.strip():
+                    text_content += f"{para.text}\n"
+            
+            if len(doc.paragraphs) > 20:
+                text_content += f"\n... and {len(doc.paragraphs) - 20} more paragraphs"
+            
+            self.show_text_preview(f"📝 DOCX CONTENT PREVIEW\n\n"
+                                  f"File: {os.path.basename(path)}\n"
+                                  f"Paragraphs: {len([p for p in doc.paragraphs if p.text.strip()])}\n"
+                                  f"\n{'-'*40}\n\n"
+                                  f"{text_content}")
+            
+        except Exception as e:
+            self.show_text_preview(f"Error loading DOCX: {str(e)}")
+    
+    def load_txt(self, path):
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read(2000)  # Read first 2000 chars
+                
+            if len(content) == 2000:
+                content += "\n\n... (truncated)"
+            
+            self.show_text_preview(f"📄 TEXT FILE PREVIEW\n\n"
+                                  f"File: {os.path.basename(path)}\n"
+                                  f"\n{'-'*40}\n\n"
+                                  f"{content}")
+            
+        except Exception as e:
+            self.show_text_preview(f"Error loading text file: {str(e)}")
+    
+    def show_text_preview(self, text):
+        # Hide canvas, show text widget
+        self.preview_canvas.pack_forget()
+        self.preview_text.pack(fill=tk.BOTH, expand=True)
+        
+        self.preview_text.delete(1.0, tk.END)
+        self.preview_text.insert(1.0, text)
+        self.preview_text.config(state=tk.DISABLED)
+    
+    def show_image_preview(self):
+        # Hide text widget, show canvas
+        self.preview_text.pack_forget()
+        self.preview_text.config(state=tk.NORMAL)
+        self.preview_canvas.pack(fill=tk.BOTH, expand=True)
+    
+    def update_file_info(self):
+        if not self.file_path:
+            return
+            
+        self.info_display.config(state=tk.NORMAL)
+        self.info_display.delete(1.0, tk.END)
+        
+        filename = os.path.basename(self.file_path)
+        file_size = os.path.getsize(self.file_path)
+        modified = datetime.fromtimestamp(os.path.getmtime(self.file_path))
+        
+        info = f"📄 File: {filename}\n"
+        info += f"📁 Type: {self.file_type.upper()}\n"
+        info += f"📂 Size: {self.format_size(file_size)}\n"
+        info += f"📅 Modified: {modified.strftime('%Y-%m-%d %H:%M')}\n"
+        info += f"📍 Path: {os.path.dirname(self.file_path)[:50]}...\n"
+        info += "-" * 30 + "\n"
+        
+        # Format-specific info
+        if self.file_type == 'image' and self.original_image:
+            info += f"📐 Dimensions: {self.original_image.width}×{self.original_image.height}\n"
+            info += f"🎨 Mode: {self.original_image.mode}\n"
+            info += f"🔤 Format: {self.original_image.format}\n"
+            
+        elif self.file_type == 'pdf' and PDF_SUPPORT:
+            try:
+                pdf_doc = fitz.open(self.file_path)
+                info += f"📑 Pages: {len(pdf_doc)}\n"
+                info += f"📊 Version: {pdf_doc.pdf_version}\n"
+                pdf_doc.close()
+            except:
+                info += "📑 PDF information unavailable\n"
+                
+        elif self.file_type == 'docx' and DOCX_SUPPORT:
+            try:
+                doc = Document(self.file_path)
+                para_count = len([p for p in doc.paragraphs if p.text.strip()])
+                info += f"📝 Paragraphs: {para_count}\n"
+            except:
+                info += "📝 DOCX information unavailable\n"
+                
+        elif self.file_type == 'txt':
+            try:
+                with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = sum(1 for _ in f)
+                info += f"📝 Lines: {lines}\n"
+            except:
+                info += "📝 Text file information\n"
+        
+        self.info_display.insert(1.0, info)
+        self.info_display.config(state=tk.DISABLED)
+    
+    def format_size(self, size_bytes):
+        """Convert bytes to human readable format"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} TB"
+    
+    def convert_file(self):
+        if not self.file_path:
+            messagebox.showwarning("Warning", "Please select a file first!")
+            return
+        
+        target_format = self.format_var.get()
+        
+        # Check if conversion is possible
+        if not self.validate_conversion(target_format):
+            return
+        
+        # Get save path
+        base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+        
+        # Map formats to extensions
+        format_ext = {
+            'PNG': '.png', 'JPEG': '.jpg', 'WebP': '.webp',
+            'BMP': '.bmp', 'GIF': '.gif', 'TIFF': '.tiff',
+            'PDF': '.pdf', 'DOCX': '.docx', 'TXT': '.txt'
+        }
+        
+        ext = format_ext.get(target_format, '')
+        default_name = f"{base_name}_converted{ext}"
+        
+        # File type filters
+        filetypes = [(f"{target_format} files", f"*{ext}"), ("All files", "*.*")]
+        
+        save_path = filedialog.asksaveasfilename(
+            initialfile=default_name,
+            defaultextension=ext,
+            filetypes=filetypes
+        )
+        
+        if not save_path:
+            return  # User cancelled
         
         try:
-            output_format = format_var.get()
-            print(f"Целевой формат: {output_format}")
+            # Show progress
+            self.show_progress("Converting...")
             
-            # Запрашиваем место сохранения
-            base_name = os.path.splitext(os.path.basename(image_path))[0]
-            default_name = f"{base_name}_converted.{output_format.lower()}"
+            # Perform conversion
+            if target_format in ['PNG', 'JPEG', 'WebP', 'BMP', 'GIF', 'TIFF']:
+                self.convert_to_image(save_path, target_format)
+            elif target_format == 'PDF':
+                self.convert_to_pdf(save_path)
+            elif target_format == 'DOCX':
+                self.convert_to_docx(save_path)
+            elif target_format == 'TXT':
+                self.convert_to_txt(save_path)
             
-            # Создаем фильтры для разных форматов
-            filetypes_map = {
-                "JPEG": [("JPEG files", "*.jpg;*.jpeg")],
-                "PNG": [("PNG files", "*.png")],
-                "WebP": [("WebP files", "*.webp")],
-                "BMP": [("BMP files", "*.bmp")],
-                "GIF": [("GIF files", "*.gif")],
-                "TIFF": [("TIFF files", "*.tiff;*.tif")]
-            }
+            self.hide_progress()
             
-            save_path = filedialog.asksaveasfilename(
-                title=f"Save as {output_format}",
-                initialfile=default_name,
-                defaultextension=f".{output_format.lower()}",
-                filetypes=filetypes_map.get(output_format, [("All files", "*.*")])
-            )
+            # Show success message
+            original_size = os.path.getsize(self.file_path)
+            new_size = os.path.getsize(save_path)
             
-            if save_path:
-                print(f"Сохраняем в: {save_path}")
-                
-                try:
-                    # Подготавливаем параметры для разных форматов
-                    save_kwargs = {}
-                    img_to_save = current_image.copy()
-                    
-                    if output_format == "JPEG":
-                        # Для JPEG нужно убрать прозрачность
-                        if img_to_save.mode in ('RGBA', 'LA', 'P'):
-                            # Создаем белый фон
-                            background = Image.new('RGB', img_to_save.size, (255, 255, 255))
-                            if img_to_save.mode == 'P':
-                                img_to_save = img_to_save.convert('RGBA')
-                            background.paste(img_to_save, mask=img_to_save.split()[-1])
-                            img_to_save = background
-                        
-                        if img_to_save.mode != 'RGB':
-                            img_to_save = img_to_save.convert('RGB')
-                        
-                        save_kwargs = {'quality': 95, 'optimize': True}
-                    
-                    elif output_format == "PNG":
-                        save_kwargs = {'compress_level': 6}
-                    
-                    elif output_format == "WebP":
-                        # WebP поддерживает прозрачность
-                        save_kwargs = {'quality': 90, 'method': 6}
-                    
-                    elif output_format == "BMP":
-                        # BMP обычно без сжатия
-                        if img_to_save.mode in ('RGBA', 'LA', 'P'):
-                            img_to_save = img_to_save.convert('RGB')
-                    
-                    elif output_format == "GIF":
-                        # Для GIF может потребоваться конвертация
-                        if img_to_save.mode not in ('P', 'L', 'RGB', 'RGBA'):
-                            img_to_save = img_to_save.convert('P', palette=Image.ADAPTIVE)
-                    
-                    elif output_format == "TIFF":
-                        save_kwargs = {'compression': 'tiff_lzw'}
-                    
-                    # Сохраняем изображение
-                    img_to_save.save(save_path, **save_kwargs)
-                    
-                    # Проверяем, что файл сохранен
-                    if os.path.exists(save_path):
-                        # Сравниваем размеры
-                        original_size = os.path.getsize(image_path) / 1024
-                        new_size = os.path.getsize(save_path) / 1024
-                        
-                        reduction = original_size - new_size
-                        percent = (reduction / original_size) * 100 if original_size > 0 else 0
-                        
-                        # Формируем сообщение
-                        if percent > 0:
-                            size_info = f"Reduced by: {reduction:.1f} KB ({percent:.1f}%)"
-                        elif percent < 0:
-                            size_info = f"Increased by: {-reduction:.1f} KB ({-percent:.1f}%)"
-                        else:
-                            size_info = "Size unchanged"
-                        
-                        result_message = (
-                            f"✅ CONVERSION SUCCESSFUL!\n\n"
-                            f"Original: {original_size:.1f} KB ({os.path.basename(image_path)})\n"
-                            f"New: {new_size:.1f} KB ({os.path.basename(save_path)})\n"
-                            f"{size_info}\n\n"
-                            f"Format: {output_format}\n"
-                            f"Saved to:\n{os.path.dirname(save_path)}"
-                        )
-                        
-                        messagebox.showinfo("Success", result_message)
-                        
-                        # Обновляем статус
-                        status_label.config(
-                            text=f"✓ Converted to {output_format} ({new_size:.1f} KB)",
-                            fg="blue"
-                        )
-                        
-                        print(f"✓ Конвертация успешна! Сохранено: {save_path}")
-                        print(f"  Размер: {new_size:.1f} KB, Формат: {output_format}")
-                    else:
-                        messagebox.showerror("Error", "Failed to save file!")
-                        
-                except Exception as e:
-                    print(f"✗ Ошибка при сохранении: {e}")
-                    messagebox.showerror("Save Error", 
-                        f"Failed to save image as {output_format}:\n\n{str(e)}")
-                    
+            messagebox.showinfo("✅ Conversion Successful",
+                              f"File converted successfully!\n\n"
+                              f"Original: {self.format_size(original_size)}\n"
+                              f"New: {self.format_size(new_size)}\n"
+                              f"Saved as: {os.path.basename(save_path)}")
+            
         except Exception as e:
-            print(f"✗ Ошибка конвертации: {e}")
-            messagebox.showerror("Conversion Error", 
-                f"Failed to convert image:\n\n{str(e)}")
+            self.hide_progress()
+            messagebox.showerror("Conversion Error",
+                               f"Failed to convert file:\n\n{str(e)}")
     
-    # ============================================================================
-    # ЗАПУСК ГЛАВНОГО ЦИКЛА
-    # ============================================================================
-    print("\n" + "=" * 50)
-    print("ЗАПУСКАЕМ ГЛАВНЫЙ ЦИКЛ ОКНА")
-    print("=" * 50)
+    def validate_conversion(self, target_format):
+        """Check if conversion from current format to target is possible"""
+        image_formats = ['PNG', 'JPEG', 'WebP', 'BMP', 'GIF', 'TIFF']
+        
+        if target_format in image_formats:
+            if self.file_type not in ['image', 'pdf']:
+                messagebox.showwarning("Warning",
+                                     f"Cannot convert {self.file_type.upper()} to image format.\n"
+                                     f"Please select an image or PDF file.")
+                return False
+        
+        return True
     
-    # Форсируем отображение окна
-    root.deiconify()
-    root.lift()
-    root.focus_force()
+    def convert_to_image(self, save_path, target_format):
+        """Convert to image format"""
+        img = None
+        
+        # Get image from current file
+        if self.file_type == 'image':
+            img = self.original_image.copy()
+        elif self.file_type == 'pdf' and PDF_SUPPORT:
+            # Convert PDF first page to image
+            pdf_doc = fitz.open(self.file_path)
+            page = pdf_doc[0]
+            pix = page.get_pixmap(matrix=fitz.Matrix(3, 3))
+            img_data = pix.tobytes("ppm")
+            img = Image.open(io.BytesIO(img_data))
+            pdf_doc.close()
+        else:
+            raise ValueError(f"Cannot convert {self.file_type} to image")
+        
+        # Format-specific processing
+        if target_format == 'JPEG':
+            if img.mode in ('RGBA', 'LA', 'P'):
+                # Add white background for transparency
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1])
+                img = background
+            
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            img.save(save_path, 'JPEG', quality=95, optimize=True)
+            
+        elif target_format == 'PNG':
+            img.save(save_path, 'PNG', compress_level=6)
+            
+        elif target_format == 'WebP':
+            img.save(save_path, 'WEBP', quality=90, method=6)
+            
+        elif target_format == 'BMP':
+            img.save(save_path, 'BMP')
+            
+        elif target_format == 'GIF':
+            if img.mode not in ['P', 'L', 'RGB', 'RGBA']:
+                img = img.convert('P', palette=Image.ADAPTIVE)
+            img.save(save_path, 'GIF')
+            
+        elif target_format == 'TIFF':
+            img.save(save_path, 'TIFF', compression='tiff_lzw')
     
-    # Обновляем окно
-    root.update()
+    def convert_to_pdf(self, save_path):
+        """Convert to PDF"""
+        if self.file_type == 'image':
+            img = self.original_image.copy()
+            if img.mode == 'RGBA':
+                img = img.convert('RGB')
+            img.save(save_path, 'PDF', resolution=100.0)
+            
+        elif self.file_type == 'pdf':
+            # PDF to PDF - just copy
+            import shutil
+            shutil.copy2(self.file_path, save_path)
+            
+        elif self.file_type == 'txt':
+            # TXT to PDF
+            if not PDF_SUPPORT:
+                raise ImportError("PyMuPDF required for TXT to PDF conversion")
+            
+            pdf_doc = fitz.open()
+            page = pdf_doc.new_page()
+            
+            with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            # Simple text insertion
+            page.insert_text((50, 50), content[:5000], fontsize=11)
+            pdf_doc.save(save_path)
+            pdf_doc.close()
+            
+        elif self.file_type == 'docx':
+            # DOCX to PDF (requires both libraries)
+            if not PDF_SUPPORT or not DOCX_SUPPORT:
+                raise ImportError("Both PyMuPDF and python-docx required for DOCX to PDF")
+            
+            doc = Document(self.file_path)
+            pdf_doc = fitz.open()
+            page = pdf_doc.new_page()
+            
+            y = 50
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    page.insert_text((50, y), para.text, fontsize=12)
+                    y += 20
+                    if y > 750:  # New page if needed
+                        page = pdf_doc.new_page()
+                        y = 50
+            
+            pdf_doc.save(save_path)
+            pdf_doc.close()
     
-    print("✓ Окно отображено")
-    print("✓ Программа готова к работе")
-    print("\nОжидание действий пользователя...")
+    def convert_to_docx(self, save_path):
+        """Convert to DOCX"""
+        if not DOCX_SUPPORT:
+            raise ImportError("python-docx required for DOCX conversion")
+        
+        doc = Document()
+        
+        if self.file_type == 'image':
+            doc.add_heading('Converted Image', 0)
+            doc.add_paragraph(f"Original file: {os.path.basename(self.file_path)}")
+            doc.add_paragraph(f"Converted on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # Add image
+            temp_img = "temp_conversion.jpg"
+            self.original_image.save(temp_img, 'JPEG', quality=90)
+            doc.add_picture(temp_img, width=Inches(5))
+            os.remove(temp_img)
+            
+        elif self.file_type == 'txt':
+            doc.add_heading('Converted Text File', 0)
+            
+            with open(self.file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            doc.add_paragraph(content)
+            
+        elif self.file_type == 'pdf':
+            if not PDF_SUPPORT:
+                raise ImportError("PyMuPDF required for PDF to DOCX")
+            
+            doc.add_heading('Converted PDF Document', 0)
+            
+            pdf_doc = fitz.open(self.file_path)
+            for page_num in range(min(5, len(pdf_doc))):  # First 5 pages max
+                page = pdf_doc[page_num]
+                text = page.get_text()
+                
+                if text.strip():
+                    doc.add_heading(f"Page {page_num + 1}", level=2)
+                    doc.add_paragraph(text)
+            
+            pdf_doc.close()
+            
+        elif self.file_type == 'docx':
+            # DOCX to DOCX - copy
+            import shutil
+            shutil.copy2(self.file_path, save_path)
+            return
+        
+        doc.save(save_path)
     
-    # Запускаем главный цикл
-    try:
-        root.mainloop()
-        print("\n✓ Главный цикл завершен")
-    except Exception as e:
-        print(f"\n✗ Ошибка в главном цикле: {e}")
+    def convert_to_txt(self, save_path):
+        """Convert to TXT"""
+        content = ""
+        
+        if self.file_type == 'txt':
+            # TXT to TXT - copy
+            import shutil
+            shutil.copy2(self.file_path, save_path)
+            return
+            
+        elif self.file_type == 'docx' and DOCX_SUPPORT:
+            doc = Document(self.file_path)
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    content += para.text + "\n\n"
+                    
+        elif self.file_type == 'pdf' and PDF_SUPPORT:
+            pdf_doc = fitz.open(self.file_path)
+            for page_num in range(len(pdf_doc)):
+                page = pdf_doc[page_num]
+                content += f"\n--- Page {page_num + 1} ---\n\n"
+                content += page.get_text()
+            pdf_doc.close()
+            
+        elif self.file_type == 'image':
+            content = f"Image File: {os.path.basename(self.file_path)}\n"
+            content += f"Dimensions: {self.original_image.width}×{self.original_image.height}\n"
+            content += f"Format: {self.original_image.format}\n"
+            content += f"Mode: {self.original_image.mode}\n"
+            
+        else:
+            content = f"File: {os.path.basename(self.file_path)}\n"
+            content += f"Type: {self.file_type}\n"
+            content += "Content preview not available in text format.\n"
+        
+        # Write to file
+        with open(save_path, 'w', encoding='utf-8') as f:
+            f.write(content)
     
-    print("=" * 50)
-    print("ПРОГРАММА ЗАВЕРШЕНА")
-    print("=" * 50)
+    def show_progress(self, message):
+        """Show progress window"""
+        self.progress = tk.Toplevel(self.root)
+        self.progress.title("Please wait")
+        self.progress.geometry("300x100")
+        self.progress.transient(self.root)
+        self.progress.grab_set()
+        
+        tk.Label(self.progress, text=message, font=("Arial", 11)).pack(pady=20)
+        
+        # Center progress window
+        self.progress.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (300 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (100 // 2)
+        self.progress.geometry(f"+{x}+{y}")
+    
+    def hide_progress(self):
+        """Hide progress window"""
+        if hasattr(self, 'progress'):
+            self.progress.destroy()
+    
+    def clear_preview(self):
+        """Clear preview area"""
+        self.show_image_preview()
+        self.preview_canvas.delete("all")
+        self.preview_label.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+    
+    def clear_all(self):
+        """Clear everything"""
+        self.file_path = None
+        self.original_image = None
+        self.preview_image = None
+        self.file_type = None
+        
+        self.clear_preview()
+        
+        self.info_display.config(state=tk.NORMAL)
+        self.info_display.delete(1.0, tk.END)
+        self.info_display.config(state=tk.DISABLED)
+        
+        self.convert_btn.config(state=tk.DISABLED, bg="lightgray")
+    
+    def show_help(self):
+        """Show help information"""
+        help_text = """
+        🔄 UNIVERSAL CONVERTER PRO - HELP
+        
+        SUPPORTED FORMATS:
+        • Images: PNG, JPEG, WebP, BMP, GIF, TIFF
+        • Documents: PDF, DOCX, TXT
+        
+        HOW TO USE:
+        1. Click 'SELECT FILE' to choose a file
+        2. Preview will appear automatically
+        3. Select target format from the list
+        4. Click 'CONVERT FILE'
+        5. Choose save location
+        
+        INSTALLATION (if needed):
+        • pip install pillow
+        • pip install pymupdf (for PDF support)
+        • pip install python-docx (for DOCX support)
+        
+        TIPS:
+        • Large files may take longer to process
+        • Some conversions require additional libraries
+        • Keep original files as backups
+        
+        Need more help? Check the documentation.
+        """
+        
+        help_window = tk.Toplevel(self.root)
+        help_window.title("Help - Universal Converter")
+        help_window.geometry("500x400")
+        
+        text_widget = scrolledtext.ScrolledText(help_window, wrap=tk.WORD)
+        text_widget.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        text_widget.insert(1.0, help_text)
+        text_widget.config(state=tk.DISABLED, font=("Arial", 10))
+        
+        # Center help window
+        help_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (500 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (400 // 2)
+        help_window.geometry(f"+{x}+{y}")
 
-# ============================================================================
-# ТОЧКА ВХОДА
-# ============================================================================
-if __name__ == "__main__":
-    try:
-        print("\nВызываем функцию main()...")
-        main()
-    except KeyboardInterrupt:
-        print("\n✗ Программа прервана пользователем")
-    except Exception as e:
-        print(f"\n✗ КРИТИЧЕСКАЯ ОШИБКА: {e}")
-        import traceback
-        traceback.print_exc()
-        input("\nНажмите Enter для выхода...")
+def check_dependencies():
+    """Check and report on required dependencies"""
+    print("="*60)
+    print("UNIVERSAL CONVERTER PRO - Dependency Check")
+    print("="*60)
     
-    # Задержка перед выходом
-    time.sleep(0.5)
-    print("\nЗавершение работы...")
+    # Required
+    try:
+        from PIL import Image
+        print("✅ Pillow (required) - OK")
+    except ImportError:
+        print("❌ Pillow - MISSING (install: pip install pillow)")
+    
+    # Optional
+    try:
+        import fitz
+        print("✅ PyMuPDF (optional) - OK")
+    except ImportError:
+        print("⚠️  PyMuPDF - NOT INSTALLED (PDF features limited)")
+    
+    try:
+        from docx import Document
+        print("✅ python-docx (optional) - OK")
+    except ImportError:
+        print("⚠️  python-docx - NOT INSTALLED (DOCX features limited)")
+    
+    print("="*60)
+    print("Starting application...")
+
+def main():
+    check_dependencies()
+    
+    root = tk.Tk()
+    app = UniversalConverter(root)
+    
+    # Set window icon if available
+    try:
+        root.iconbitmap('icon.ico')
+    except:
+        pass
+    
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
